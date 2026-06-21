@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>pi-ZTNA · Pending</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-black min-h-screen text-gray-100">
+
+  <div id="toast-stack" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 items-center w-full max-w-md px-4 pointer-events-none"></div>
+
+  <nav class="border-b border-neutral-800 bg-neutral-950/80 backdrop-blur sticky top-0 z-40">
+    <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="h-2.5 w-2.5 rounded-full bg-blue-500"></span>
+        <span class="font-semibold tracking-tight">pi-ZTNA</span>
+      </div>
+      <div id="nav-links" class="flex items-center gap-1 text-sm"></div>
+    </div>
+  </nav>
+
+  <main class="max-w-6xl mx-auto px-6 py-10">
+    <header class="mb-8 flex items-end justify-between gap-4 flex-wrap">
+      <div>
+        <p class="text-xs uppercase tracking-widest text-blue-400 mb-1">Enrollment</p>
+        <h1 class="text-2xl font-semibold">Pending Requests</h1>
+        <p class="text-sm text-neutral-400 mt-1">Select a request to review and approve or reject it.</p>
+      </div>
+      <button id="refresh" class="text-sm px-3 py-1.5 rounded-md border border-neutral-700 text-neutral-300 hover:bg-neutral-800 transition">
+        Refresh
+      </button>
+    </header>
+
+    <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+
+
+      <section>
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-medium text-neutral-300">Requests</h2>
+          <span id="req-count" class="text-xs text-neutral-500"></span>
+        </div>
+        <div id="request-list" class="space-y-2"></div>
+        <p id="empty" class="text-sm text-neutral-500 mt-2 hidden">No pending requests.</p>
+      </section>
+
+      <section class="lg:sticky lg:top-20 self-start w-full">
+        <div id="detail-empty" class="p-8 bg-neutral-900 rounded-2xl border border-dashed border-neutral-800 text-center">
+          <p class="text-sm text-neutral-500">Select a request on the left to review it.</p>
+        </div>
+
+        <div id="detail" class="hidden p-6 bg-neutral-900 rounded-2xl border border-neutral-800">
+          <div class="mb-5">
+            <h2 id="d-username" class="text-lg font-semibold text-gray-100">—</h2>
+            <dl class="mt-3 space-y-2 text-sm">
+              <div class="flex justify-between gap-4">
+                <dt class="text-neutral-500">Device</dt>
+                <dd id="d-device" class="text-gray-100 text-right">—</dd>
+              </div>
+              <div class="flex justify-between gap-4">
+                <dt class="text-neutral-500">Submitted</dt>
+                <dd id="d-submitted" class="text-neutral-300 text-right">—</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="border-t border-neutral-800 pt-5">
+            <p class="text-sm font-medium text-neutral-300 mb-1">Grant permissions</p>
+            <p class="text-xs text-neutral-500 mb-3">Applied only when approving. New devices for an existing user inherit that user's current permissions.</p>
+            <div id="perm-list" class="space-y-1.5"></div>
+          </div>
+
+          <div class="mt-6 flex gap-3">
+            <button id="approve-btn"
+              class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 rounded-md font-medium transition">
+              Approve & issue certificate
+            </button>
+            <button id="reject-btn"
+              class="px-4 py-2 bg-neutral-800 hover:bg-red-700 rounded-md font-medium transition">
+              Reject
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    function navItems(isAdmin) {
+      return [
+        { href: isAdmin ? "/admin/dashboard" : "/dashboard", label: "Dashboard", always: true },
+        { href: "/pending", label: "Pending",    perm: "manage_pending" },
+        { href: "/devices", label: "Devices",    perm: "manage_devices" },
+        { href: "/users",   label: "Users",      perm: "manage_users" },
+        { href: "/logs",    label: "Audit Logs", perm: "view_audit_logs" },
+      ];
+    }
+
+    function renderNav(perms) {
+      const isAdmin = perms.includes("system_admin");
+      const box = document.getElementById("nav-links");
+      const here = window.location.pathname;
+      const links = navItems(isAdmin)
+        .filter(i => i.always || isAdmin || perms.includes(i.perm))
+        .map(i => {
+          const active = here === i.href;
+          const cls = active
+            ? "px-3 py-1.5 rounded-md bg-blue-600/20 text-blue-300 border border-blue-600/40"
+            : "px-3 py-1.5 rounded-md text-neutral-300 hover:text-white hover:bg-neutral-800 transition";
+          return `<a href="${i.href}" class="${cls}">${i.label}</a>`;
+        }).join("");
+      box.innerHTML = links +
+        `<a href="/logout" class="ml-1 px-3 py-1.5 rounded-md text-neutral-400 hover:text-red-300 hover:bg-red-600/10 transition">Logout</a>`;
+    }
+
+    // Keep in sync with the server's Permissions constants.
+    const PERMISSIONS = [
+      { value: "system_admin",    label: "System Admin (full access)" },
+      { value: "manage_devices",  label: "Manage Devices" },
+      { value: "manage_users",    label: "Manage Users" },
+      { value: "manage_pending",  label: "Manage Pending Requests" },
+      { value: "view_audit_logs", label: "View Audit Logs" },
+    ];
+
+    let requests = [];
+    let selectedKey = null; // username + "\u0000" + device_name
+
+    function keyOf(r){ return (r.username||"") + "|||" + (r.device_name||""); }
+
+    function escapeHtml(s){
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+    function fmtDate(s){
+      if(!s) return "—";
+      const d = new Date(s);
+      if(isNaN(d)) return s;
+      return d.toLocaleString(undefined,{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
+    }
+
+    function showToast(message, ok){
+      const stack = document.getElementById("toast-stack");
+      const t = document.createElement("div");
+      t.className = "pointer-events-auto cursor-pointer px-4 py-3 rounded-md text-sm font-medium shadow-lg border text-center w-full transition-opacity duration-300 " +
+        (ok ? "bg-green-600/20 border-green-600 text-green-300" : "bg-red-600/20 border-red-600 text-red-300");
+      t.textContent = message;
+      const remove = () => { t.style.opacity = "0"; setTimeout(()=>t.remove(),300); };
+      t.addEventListener("click", remove);
+      stack.appendChild(t);
+      if (ok) setTimeout(remove, 6000); // errors persist until clicked
+    }
+
+    async function loadMe(){
+      try{
+        const res = await fetch("/me");
+        if(res.status===403||res.status===401){ window.location.href="/login"; return; }
+        if(res.ok){ const me = await res.json(); renderNav(me.permissions||[]); }
+      }catch(e){ /* nav stays empty; list load will surface errors */ }
+    }
+
+    async function loadPending(){
+      try{
+        const res = await fetch("/pending/list");
+        if(res.status===403||res.status===401){ window.location.href="/login"; return; }
+        if(!res.ok) throw new Error("status "+res.status);
+        requests = (await res.json()) || [];
+      }catch(e){
+        document.getElementById("request-list").innerHTML =
+          `<p class="text-sm text-red-400">Couldn't load requests: ${escapeHtml(e.message)}</p>`;
+        return;
+      }
+      renderList();
+    }
+
+    function renderList(){
+      const list = document.getElementById("request-list");
+      const empty = document.getElementById("empty");
+      const count = document.getElementById("req-count");
+      count.textContent = requests.length + (requests.length===1?" request":" requests");
+
+      if(!requests.length){
+        list.innerHTML = "";
+        empty.classList.remove("hidden");
+        clearDetail();
+        return;
+      }
+      empty.classList.add("hidden");
+
+      // if the selected request is gone (after approve/reject), clear detail
+      if(selectedKey && !requests.some(r => keyOf(r)===selectedKey)) clearDetail();
+
+      list.innerHTML = requests.map(r => {
+        const k = keyOf(r);
+        const active = k === selectedKey;
+        const base = "w-full text-left p-3 rounded-xl border transition cursor-pointer ";
+        const cls = active
+          ? "bg-blue-600/10 border-blue-600/50"
+          : "bg-neutral-900 border-neutral-800 hover:border-neutral-700";
+        return `
+          <button data-key="${escapeHtml(k)}" class="${base}${cls}">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium text-gray-100">${escapeHtml(r.username)}</span>
+              <span class="text-[11px] text-neutral-500">${escapeHtml(fmtDate(r.submitted_at))}</span>
+            </div>
+            <div class="text-xs text-neutral-400 mt-0.5">${escapeHtml(r.device_name)}</div>
+          </button>`;
+      }).join("");
+
+      list.querySelectorAll("button[data-key]").forEach(btn => {
+        btn.addEventListener("click", () => selectRequest(btn.getAttribute("data-key")));
+      });
+    }
+
+    function selectRequest(key){
+      const req = requests.find(r => keyOf(r)===key);
+      if(!req) return;
+      selectedKey = key;
+      renderList(); // re-highlight
+
+      document.getElementById("detail-empty").classList.add("hidden");
+      document.getElementById("detail").classList.remove("hidden");
+      document.getElementById("d-username").textContent = req.username;
+      document.getElementById("d-device").textContent = req.device_name;
+      document.getElementById("d-submitted").textContent = fmtDate(req.submitted_at);
+
+      // fresh, unchecked permission boxes each selection
+      document.getElementById("perm-list").innerHTML = PERMISSIONS.map(p => `
+        <label class="flex items-center gap-2 text-sm text-neutral-200">
+          <input type="checkbox" value="${p.value}" class="perm-box accent-blue-600">
+          ${escapeHtml(p.label)}
+        </label>`).join("");
+
+      // wire the action buttons to THIS request
+      document.getElementById("approve-btn").onclick = () => act(req, "approve");
+      document.getElementById("reject-btn").onclick  = () => act(req, "reject");
+    }
+
+    function clearDetail(){
+      selectedKey = null;
+      document.getElementById("detail").classList.add("hidden");
+      document.getElementById("detail-empty").classList.remove("hidden");
+    }
+
+    async function act(req, action){
+      const body = new URLSearchParams();
+      body.set("action", action);
+      body.set("username", req.username);
+      body.set("device_name", req.device_name);
+      if(action === "approve"){
+        document.querySelectorAll(".perm-box:checked").forEach(cb => body.append("permissions", cb.value));
+      }
+
+      // disable buttons during request
+      const aBtn = document.getElementById("approve-btn");
+      const rBtn = document.getElementById("reject-btn");
+      aBtn.disabled = rBtn.disabled = true;
+      aBtn.classList.add("opacity-60"); rBtn.classList.add("opacity-60");
+
+      try{
+        const res = await fetch("/pending", { method:"POST", body });
+        let data;
+        try{ data = await res.json(); }catch(e){ data = { message: "Non-JSON response (status "+res.status+")" }; }
+        showToast(data.message || (res.ok ? "Done" : "Error "+res.status), res.ok);
+        if(res.ok){ clearDetail(); await loadPending(); }
+      }catch(e){
+        showToast("Network error: "+e.message, false);
+      }finally{
+        aBtn.disabled = rBtn.disabled = false;
+        aBtn.classList.remove("opacity-60"); rBtn.classList.remove("opacity-60");
+      }
+    }
+
+    document.getElementById("refresh").addEventListener("click", loadPending);
+
+    loadMe();
+    loadPending();
+  </script>
+</body>
+</html>

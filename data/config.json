@@ -1,0 +1,16 @@
+{
+    "base_path": ".",
+    "server_port": 8443,
+    "session_timeout_seconds": 3600,
+    "max_log_file_size_bytes": 4194304,
+    "max_buffer_size_bytes": 4096,
+    "log_auto_flush": true,
+    "audit_log_path": "logs/audit.log",
+    "max_login_attempts": 5,
+    "rate_limit_window_seconds": 60,
+    "permissions_list": ["admin", "read_logs", "manage_users", "manage_devices", "manage_pending"],
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "smtp_username": "INSERT_EMAIL",
+    "smtp_password": "INSERT_EMAIL_PASSWORD_SMTP"
+}

@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>pi-ZTNA · Devices</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-black min-h-screen text-gray-100">
+
+  <div id="toast-stack" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 items-center w-full max-w-md px-4 pointer-events-none"></div>
+
+  <nav class="border-b border-neutral-800 bg-neutral-950/80 backdrop-blur sticky top-0 z-40">
+    <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="h-2.5 w-2.5 rounded-full bg-blue-500"></span>
+        <span class="font-semibold tracking-tight">pi-ZTNA</span>
+      </div>
+      <div id="nav-links" class="flex items-center gap-1 text-sm"></div>
+    </div>
+  </nav>
+
+  <main class="max-w-6xl mx-auto px-6 py-10">
+    <header class="mb-8 flex items-end justify-between gap-4 flex-wrap">
+      <div>
+        <p class="text-xs uppercase tracking-widest text-blue-400 mb-1">Management</p>
+        <h1 class="text-2xl font-semibold">Devices</h1>
+        <p class="text-sm text-neutral-400 mt-1">Select a device to view it or change its access.</p>
+      </div>
+      <button id="refresh" class="text-sm px-3 py-1.5 rounded-md border border-neutral-700 text-neutral-300 hover:bg-neutral-800 transition">
+        Refresh
+      </button>
+    </header>
+
+    <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+
+
+      <section>
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-medium text-neutral-300">Enrolled devices</h2>
+          <span id="dev-count" class="text-xs text-neutral-500"></span>
+        </div>
+        <div id="device-list" class="space-y-2"></div>
+        <p id="empty" class="text-sm text-neutral-500 mt-2 hidden">No devices enrolled.</p>
+      </section>
+
+      <section class="lg:sticky lg:top-20 self-start w-full">
+        <div id="detail-empty" class="p-8 bg-neutral-900 rounded-2xl border border-dashed border-neutral-800 text-center">
+          <p class="text-sm text-neutral-500">Select a device on the left to manage it.</p>
+        </div>
+
+        <div id="detail" class="hidden p-6 bg-neutral-900 rounded-2xl border border-neutral-800">
+          <div class="flex items-start justify-between gap-4 mb-5">
+            <div>
+              <h2 id="d-name" class="text-lg font-semibold text-gray-100">—</h2>
+              <p class="text-sm text-neutral-400">Owner: <span id="d-owner" class="text-neutral-200">—</span></p>
+            </div>
+            <span id="d-status" class="px-2.5 py-1 rounded-md text-xs font-medium border">—</span>
+          </div>
+
+          <dl class="space-y-2 text-sm border-t border-neutral-800 pt-4">
+            <div class="flex justify-between gap-4">
+              <dt class="text-neutral-500">Device ID</dt>
+              <dd id="d-id" class="text-neutral-300 font-mono text-right break-all">—</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="text-neutral-500">Issued</dt>
+              <dd id="d-issued" class="text-neutral-300 text-right">—</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="text-neutral-500">Expires</dt>
+              <dd id="d-expires" class="text-neutral-300 text-right">—</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="text-neutral-500">Last seen</dt>
+              <dd id="d-lastseen" class="text-neutral-300 text-right">—</dd>
+            </div>
+            <div>
+              <dt class="text-neutral-500 mb-1">Certificate fingerprint</dt>
+              <dd id="d-fp" class="text-neutral-400 font-mono text-xs break-all bg-black/40 rounded p-2 select-all">—</dd>
+            </div>
+          </dl>
+
+
+          <div class="border-t border-neutral-800 mt-5 pt-5">
+            <p class="text-sm font-medium text-neutral-300 mb-3">Access</p>
+            <div class="flex gap-2" id="access-toggle" role="radiogroup" aria-label="Device access state">
+              <button type="button" data-state="active"
+                class="flex-1 py-2 rounded-md text-sm font-medium border transition">
+                Active
+              </button>
+              <button type="button" data-state="revoked"
+                class="flex-1 py-2 rounded-md text-sm font-medium border transition">
+                Revoked
+              </button>
+            </div>
+            <p id="access-hint" class="text-xs text-neutral-500 mt-2"></p>
+          </div>
+
+          <div class="mt-6 flex gap-3">
+            <button id="save-btn"
+              class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 rounded-md font-medium transition disabled:opacity-50 disabled:cursor-not-allowed">
+              Save changes
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    function navItems(isAdmin) {
+      return [
+        { href: isAdmin ? "/admin/dashboard" : "/dashboard", label: "Dashboard", always: true },
+        { href: "/pending", label: "Pending",    perm: "manage_pending" },
+        { href: "/devices", label: "Devices",    perm: "manage_devices" },
+        { href: "/users",   label: "Users",      perm: "manage_users" },
+        { href: "/logs",    label: "Audit Logs", perm: "view_audit_logs" },
+      ];
+    }
+
+    function renderNav(perms) {
+      const isAdmin = perms.includes("system_admin");
+      const box = document.getElementById("nav-links");
+      const here = window.location.pathname;
+      const links = navItems(isAdmin)
+        .filter(i => i.always || isAdmin || perms.includes(i.perm))
+        .map(i => {
+          const active = here === i.href;
+          const cls = active
+            ? "px-3 py-1.5 rounded-md bg-blue-600/20 text-blue-300 border border-blue-600/40"
+            : "px-3 py-1.5 rounded-md text-neutral-300 hover:text-white hover:bg-neutral-800 transition";
+          return `<a href="${i.href}" class="${cls}">${i.label}</a>`;
+        }).join("");
+      box.innerHTML = links +
+        `<a href="/logout" class="ml-1 px-3 py-1.5 rounded-md text-neutral-400 hover:text-red-300 hover:bg-red-600/10 transition">Logout</a>`;
+    }
+
+    let devices = [];
+    let selectedId = null;
+    let pendingState = null; // the access state the admin has chosen in the toggle (true = revoked)
+
+    function escapeHtml(s){
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+    function fmtDate(s){
+      if(!s) return "—";
+      const d = new Date(s);
+      if(isNaN(d)) return s;
+      return d.toLocaleString(undefined,{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
+    }
+
+    function showToast(message, ok){
+      const stack = document.getElementById("toast-stack");
+      const t = document.createElement("div");
+      t.className = "pointer-events-auto cursor-pointer px-4 py-3 rounded-md text-sm font-medium shadow-lg border text-center w-full transition-opacity duration-300 " +
+        (ok ? "bg-green-600/20 border-green-600 text-green-300" : "bg-red-600/20 border-red-600 text-red-300");
+      t.textContent = message;
+      const remove = () => { t.style.opacity = "0"; setTimeout(()=>t.remove(),300); };
+      t.addEventListener("click", remove);
+      stack.appendChild(t);
+      if (ok) setTimeout(remove, 6000); // errors persist until clicked
+    }
+
+    async function loadMe(){
+      try{
+        const res = await fetch("/me");
+        if(res.status===403||res.status===401){ window.location.href="/login"; return; }
+        if(res.ok){ const me = await res.json(); renderNav(me.permissions||[]); }
+      }catch(e){ /* nav stays empty; list load surfaces errors */ }
+    }
+
+    async function loadDevices(){
+      try{
+        const res = await fetch("/devices/list");
+        if(res.status===403||res.status===401){ window.location.href="/login"; return; }
+        if(!res.ok) throw new Error("status "+res.status);
+        devices = (await res.json()) || [];
+      }catch(e){
+        document.getElementById("device-list").innerHTML =
+          `<p class="text-sm text-red-400">Couldn't load devices: ${escapeHtml(e.message)}</p>`;
+        return;
+      }
+      renderList();
+    }
+
+    function renderList(){
+      const list = document.getElementById("device-list");
+      const empty = document.getElementById("empty");
+      const count = document.getElementById("dev-count");
+      count.textContent = devices.length + (devices.length===1?" device":" devices");
+
+      if(!devices.length){
+        list.innerHTML = "";
+        empty.classList.remove("hidden");
+        clearDetail();
+        return;
+      }
+      empty.classList.add("hidden");
+
+      if(selectedId && !devices.some(d => d.device_id===selectedId)) clearDetail();
+
+      list.innerHTML = devices.map(d => {
+        const active = d.device_id === selectedId;
+        let cls;
+        if (d.revoked) {
+          cls = active ? "bg-red-600/20 border-red-500/60" : "bg-red-600/10 border-red-800/50 hover:border-red-700/60";
+        } else {
+          cls = active ? "bg-blue-600/10 border-blue-600/50" : "bg-neutral-900 border-neutral-800 hover:border-neutral-700";
+        }
+        const badge = d.revoked
+          ? `<span class="text-[11px] px-1.5 py-0.5 rounded bg-red-600/20 text-red-300 border border-red-600/40">Revoked</span>`
+          : `<span class="text-[11px] px-1.5 py-0.5 rounded bg-green-600/15 text-green-300 border border-green-600/30">Active</span>`;
+        return `
+          <button data-id="${escapeHtml(d.device_id)}" class="w-full text-left p-3 rounded-xl border transition cursor-pointer ${cls}">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm font-medium ${d.revoked ? 'text-red-200' : 'text-gray-100'}">${escapeHtml(d.device_name)}</span>
+              ${badge}
+            </div>
+            <div class="text-xs text-neutral-400 mt-0.5">Owner: ${escapeHtml(d.owner_user)}</div>
+          </button>`;
+      }).join("");
+
+      list.querySelectorAll("button[data-id]").forEach(btn => {
+        btn.addEventListener("click", () => selectDevice(btn.getAttribute("data-id")));
+      });
+    }
+
+    function selectDevice(id){
+      const d = devices.find(x => x.device_id === id);
+      if(!d) return;
+      selectedId = id;
+      pendingState = d.revoked;
+      renderList();
+
+      document.getElementById("detail-empty").classList.add("hidden");
+      document.getElementById("detail").classList.remove("hidden");
+      document.getElementById("d-name").textContent = d.device_name;
+      document.getElementById("d-owner").textContent = d.owner_user;
+      document.getElementById("d-id").textContent = d.device_id;
+      document.getElementById("d-issued").textContent = fmtDate(d.issued_at);
+      document.getElementById("d-expires").textContent = fmtDate(d.expires_at);
+      document.getElementById("d-lastseen").textContent = d.last_seen ? fmtDate(d.last_seen) : "Never";
+      document.getElementById("d-fp").textContent = d.cert_fingerprint || "—";
+
+      // status pill
+      const status = document.getElementById("d-status");
+      if (d.revoked) {
+        status.textContent = "Revoked";
+        status.className = "px-2.5 py-1 rounded-md text-xs font-medium border bg-red-600/20 text-red-300 border-red-600/40";
+      } else {
+        status.textContent = "Active";
+        status.className = "px-2.5 py-1 rounded-md text-xs font-medium border bg-green-600/15 text-green-300 border-green-600/30";
+      }
+
+      renderToggle(d);
+      updateSaveState(d);
+    }
+
+    function renderToggle(device){
+      const wrap = document.getElementById("access-toggle");
+      wrap.querySelectorAll("button[data-state]").forEach(btn => {
+        const isRevokedBtn = btn.getAttribute("data-state") === "revoked";
+        const chosen = (pendingState === true) === isRevokedBtn;
+        if (chosen && isRevokedBtn) {
+          btn.className = "flex-1 py-2 rounded-md text-sm font-medium border bg-red-600/20 text-red-200 border-red-500/60";
+        } else if (chosen && !isRevokedBtn) {
+          btn.className = "flex-1 py-2 rounded-md text-sm font-medium border bg-green-600/15 text-green-200 border-green-500/50";
+        } else {
+          btn.className = "flex-1 py-2 rounded-md text-sm font-medium border bg-neutral-900 text-neutral-400 border-neutral-700 hover:bg-neutral-800";
+        }
+        btn.setAttribute("aria-checked", chosen ? "true" : "false");
+        btn.onclick = () => {
+          pendingState = isRevokedBtn;
+          renderToggle(device);
+          updateSaveState(device);
+        };
+      });
+    }
+
+    function updateSaveState(device){
+      const save = document.getElementById("save-btn");
+      const hint = document.getElementById("access-hint");
+      const changed = pendingState !== device.revoked;
+      save.disabled = !changed;
+      if (!changed) {
+        hint.textContent = device.revoked
+          ? "This device is revoked and cannot authenticate."
+          : "This device is active.";
+      } else if (pendingState === true) {
+        hint.textContent = "Will revoke: this device will be blocked on its next request.";
+      } else {
+        hint.textContent = "Will restore: this device will be allowed to authenticate again.";
+      }
+    }
+
+    function clearDetail(){
+      selectedId = null;
+      pendingState = null;
+      document.getElementById("detail").classList.add("hidden");
+      document.getElementById("detail-empty").classList.remove("hidden");
+    }
+
+    async function save(){
+      const d = devices.find(x => x.device_id === selectedId);
+      if(!d) return;
+      const body = new URLSearchParams();
+      body.set("device_id", d.device_id);
+      body.set("revoked", pendingState ? "true" : "false");
+
+      const save = document.getElementById("save-btn");
+      save.disabled = true;
+      save.classList.add("opacity-60");
+
+      try{
+        const res = await fetch("/devices", { method:"POST", body });
+        let data;
+        try{ data = await res.json(); }catch(e){ data = { message: "Non-JSON response (status "+res.status+")" }; }
+        showToast(data.message || (res.ok ? "Saved" : "Error "+res.status), res.ok);
+        if(res.ok){ await loadDevices(); /* re-render with fresh state; keeps selection if still present */ 
+          // re-select to refresh detail panel against new data
+          if (devices.some(x => x.device_id === d.device_id)) selectDevice(d.device_id);
+        }
+      }catch(e){
+        showToast("Network error: "+e.message, false);
+      }finally{
+        save.classList.remove("opacity-60");
+        const cur = devices.find(x => x.device_id === selectedId);
+        if (cur) updateSaveState(cur);
+      }
+    }
+
+    document.getElementById("save-btn").addEventListener("click", save);
+    document.getElementById("refresh").addEventListener("click", loadDevices);
+
+    loadMe();
+    loadDevices();
+  </script>
+</body>
+</html>

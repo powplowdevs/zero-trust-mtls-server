@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>pi-ZTNA · Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-black min-h-screen text-gray-100">
+
+  <nav class="border-b border-neutral-800 bg-neutral-950/80 backdrop-blur sticky top-0 z-40">
+    <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="h-2.5 w-2.5 rounded-full bg-blue-500"></span>
+        <span class="font-semibold tracking-tight">pi-ZTNA</span>
+      </div>
+      <div id="nav-links" class="flex items-center gap-1 text-sm"></div>
+    </div>
+  </nav>
+
+  <main class="max-w-6xl mx-auto px-6 py-10">
+    <header class="mb-8">
+      <p class="text-xs uppercase tracking-widest text-blue-400 mb-1">Admin</p>
+      <h1 id="page-title" class="text-2xl font-semibold">Loading…</h1>
+      <p id="page-sub" class="text-sm text-neutral-400 mt-1"></p>
+    </header>
+
+    <div class="grid gap-6 md:grid-cols-3">
+      <!-- Identity card -->
+      <section class="md:col-span-1 p-6 bg-neutral-900 rounded-2xl border border-neutral-800">
+        <h2 class="text-sm font-medium text-neutral-300 mb-4">Identity</h2>
+        <dl class="space-y-3 text-sm">
+          <div>
+            <dt class="text-neutral-500">Username</dt>
+            <dd id="f-username" class="text-gray-100 font-mono">—</dd>
+          </div>
+          <div>
+            <dt class="text-neutral-500">Display name</dt>
+            <dd id="f-display" class="text-gray-100">—</dd>
+          </div>
+        </dl>
+
+        <h2 class="text-sm font-medium text-neutral-300 mt-6 mb-3">Permissions</h2>
+        <div id="f-perms" class="flex flex-wrap gap-2">
+          <span class="text-xs text-neutral-500">—</span>
+        </div>
+      </section>
+
+      <!-- Devices card -->
+      <section class="md:col-span-2 p-6 bg-neutral-900 rounded-2xl border border-neutral-800">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-medium text-neutral-300">Your devices</h2>
+          <span id="device-count" class="text-xs text-neutral-500"></span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-neutral-500 border-b border-neutral-800">
+                <th class="py-2 pr-4 font-normal">Device</th>
+                <th class="py-2 pr-4 font-normal">Issued</th>
+                <th class="py-2 pr-4 font-normal">Expires</th>
+                <th class="py-2 font-normal">Last seen</th>
+              </tr>
+            </thead>
+            <tbody id="device-rows" class="divide-y divide-neutral-800/60"></tbody>
+          </table>
+        </div>
+
+        <p id="no-devices" class="text-sm text-neutral-500 mt-4 hidden">
+          No devices are linked to your account yet.
+        </p>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    function navItems(isAdmin) {
+      return [
+        { href: isAdmin ? "/admin/dashboard" : "/dashboard", label: "Dashboard", always: true },
+        { href: "/pending", label: "Pending",    perm: "manage_pending" },
+        { href: "/devices", label: "Devices",    perm: "manage_devices" },
+        { href: "/users",   label: "Users",      perm: "manage_users" },
+        { href: "/logs",    label: "Audit Logs", perm: "view_audit_logs" },
+      ];
+    }
+
+    function renderNav(perms) {
+      const isAdmin = perms.includes("system_admin");
+      const box = document.getElementById("nav-links");
+      const here = window.location.pathname;
+      const links = navItems(isAdmin)
+        .filter(i => i.always || isAdmin || perms.includes(i.perm))
+        .map(i => {
+          const active = here === i.href;
+          const cls = active
+            ? "px-3 py-1.5 rounded-md bg-blue-600/20 text-blue-300 border border-blue-600/40"
+            : "px-3 py-1.5 rounded-md text-neutral-300 hover:text-white hover:bg-neutral-800 transition";
+          return `<a href="${i.href}" class="${cls}">${i.label}</a>`;
+        }).join("");
+      box.innerHTML = links +
+        `<a href="/logout" class="ml-1 px-3 py-1.5 rounded-md text-neutral-400 hover:text-red-300 hover:bg-red-600/10 transition">Logout</a>`;
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+
+    const PERM_LABELS = {
+      system_admin: "System Admin",
+      manage_devices: "Manage Devices",
+      manage_users: "Manage Users",
+      manage_pending: "Manage Pending",
+      view_audit_logs: "View Audit Logs",
+    };
+
+    function fmtDate(s) {
+      if (!s) return "—";
+      const d = new Date(s);
+      if (isNaN(d)) return s;
+      return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    }
+
+    async function loadMe() {
+      let me;
+      try {
+        const res = await fetch("/me");
+        if (res.status === 403 || res.status === 401) { window.location.href = "/login"; return; }
+        if (!res.ok) throw new Error("status " + res.status);
+        me = await res.json();
+      } catch (e) {
+        document.getElementById("page-title").textContent = "Couldn't load your account";
+        document.getElementById("page-sub").textContent = "Try refreshing, or log in again.";
+        return;
+      }
+
+      const perms = me.permissions || [];
+      renderNav(perms);
+
+      document.getElementById("page-title").textContent = "Welcome, " + (me.display_name || me.username);
+      document.getElementById("page-sub").textContent = "Here's what's tied to your account.";
+      document.getElementById("f-username").textContent = me.username || "—";
+      document.getElementById("f-display").textContent = me.display_name || "—";
+
+      const permBox = document.getElementById("f-perms");
+      if (perms.length) {
+        permBox.innerHTML = perms.map(p =>
+          `<span class="px-2 py-1 rounded-md text-xs bg-blue-600/15 text-blue-300 border border-blue-600/30">${escapeHtml(PERM_LABELS[p] || p)}</span>`
+        ).join("");
+      } else {
+        permBox.innerHTML = `<span class="text-xs text-neutral-500">No special permissions</span>`;
+      }
+
+      const devices = me.devices || [];
+      const rows = document.getElementById("device-rows");
+      const count = document.getElementById("device-count");
+      const none = document.getElementById("no-devices");
+      count.textContent = devices.length + (devices.length === 1 ? " device" : " devices");
+
+      if (!devices.length) {
+        none.classList.remove("hidden");
+      } else {
+        rows.innerHTML = devices.map(d => `
+          <tr>
+            <td class="py-2.5 pr-4">
+              <div class="text-gray-100">${escapeHtml(d.device_name || "—")}</div>
+              <div class="text-xs text-neutral-600 font-mono">${escapeHtml(d.device_id || "")}</div>
+            </td>
+            <td class="py-2.5 pr-4 text-neutral-400">${escapeHtml(fmtDate(d.issued_at))}</td>
+            <td class="py-2.5 pr-4 text-neutral-400">${escapeHtml(fmtDate(d.expires_at))}</td>
+            <td class="py-2.5 text-neutral-400">${escapeHtml(d.last_seen ? fmtDate(d.last_seen) : "Never")}</td>
+          </tr>
+        `).join("");
+      }
+    }
+
+    loadMe();
+  </script>
+</body>
+</html>

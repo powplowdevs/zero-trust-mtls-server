@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>pi-ZTNA · Enroll</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-black flex items-center justify-center min-h-screen text-gray-100 py-10">
+
+  <div id="toast-stack" class="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 items-center w-full max-w-xs px-4 pointer-events-none"></div>
+
+  <div class="w-full max-w-xl p-8 bg-neutral-900 rounded-2xl shadow-lg border border-neutral-800">
+    <h1 class="text-2xl font-semibold text-center mb-2">Enroll New Device</h1>
+    <p class="text-sm text-neutral-400 text-center mb-6">
+      Register this device for certificate-based access. An admin must approve your request before access is granted.
+    </p>
+
+    <div class="mb-5 p-4 bg-neutral-800 rounded-lg border border-neutral-700">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="flex items-center justify-center h-5 w-5 rounded-full bg-blue-600 text-xs font-semibold">1</span>
+        <h2 class="text-sm font-medium">Generate your key &amp; request</h2>
+      </div>
+      <p class="text-xs text-neutral-400 mb-3">
+        Run this on the device you want to enroll. Your private key (<span class="font-mono text-neutral-300">client.key</span>)
+        is created locally and <span class="text-neutral-200">never leaves your machine</span>.
+        Replace <span class="font-mono text-blue-300">YOUR_USERNAME</span> with the exact username you'll enter below —
+        the certificate's name must match or approval will be rejected.
+      </p>
+
+      <div class="relative group">
+        <pre id="cmd-gen" class="text-xs bg-black rounded-md p-3 pr-12 overflow-x-auto text-green-400 leading-relaxed">openssl genrsa -out client.key 4096
+openssl req -new -key client.key -out client.csr -subj "/CN=YOUR_USERNAME"</pre>
+        <button type="button" data-copy="cmd-gen"
+          class="copy-btn absolute top-2 right-2 px-2 py-1 text-[11px] rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 transition">
+          Copy
+        </button>
+      </div>
+
+      <p class="text-xs text-neutral-400 mt-3">
+        This produces <span class="font-mono text-neutral-300">client.csr</span>. Open it and paste its full contents
+        (including the <span class="font-mono">BEGIN</span>/<span class="font-mono">END</span> lines) into the form below.
+      </p>
+      <div class="relative group mt-2">
+        <pre id="cmd-cat" class="text-xs bg-black rounded-md p-3 pr-12 overflow-x-auto text-green-400">cat client.csr</pre>
+        <button type="button" data-copy="cmd-cat"
+          class="copy-btn absolute top-2 right-2 px-2 py-1 text-[11px] rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 transition">
+          Copy
+        </button>
+      </div>
+    </div>
+
+    <div class="mb-6">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="flex items-center justify-center h-5 w-5 rounded-full bg-blue-600 text-xs font-semibold">2</span>
+        <h2 class="text-sm font-medium">Submit your request</h2>
+      </div>
+
+      <form action="/enroll" method="post" class="space-y-4">
+        <div>
+          <label class="block text-sm mb-1" for="username">Username</label>
+          <input type="text" id="username" name="username" required
+            class="w-full px-3 py-2 bg-neutral-800 text-gray-100 rounded-md border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <p class="text-xs text-neutral-500 mt-1">Must match the <span class="font-mono">/CN=</span> value in your command above.</p>
+        </div>
+        <div>
+          <label class="block text-sm mb-1" for="email">Email</label>
+          <input type="email" id="email" name="email" placeholder="you@example.com" required
+            class="w-full px-3 py-2 bg-neutral-800 text-gray-100 rounded-md border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <p class="text-xs text-neutral-500 mt-1">Your signed certificate will be emailed here once approved.</p>
+        </div>
+        <div>
+          <label class="block text-sm mb-1" for="password">Password</label>
+          <input type="password" id="password" name="password" required
+            class="w-full px-3 py-2 bg-neutral-800 text-gray-100 rounded-md border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-sm mb-1" for="device_name">Device name</label>
+          <input type="text" id="device_name" name="device_name" placeholder="e.g. johns-laptop" required
+            class="w-full px-3 py-2 bg-neutral-800 text-gray-100 rounded-md border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-sm mb-1" for="csr">Certificate Signing Request (CSR)</label>
+          <textarea id="csr" name="csr" rows="7" required
+            placeholder="-----BEGIN CERTIFICATE REQUEST-----&#10;...&#10;-----END CERTIFICATE REQUEST-----"
+            class="w-full px-3 py-2 bg-neutral-800 text-gray-100 rounded-md border border-neutral-700 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+        </div>
+        <button type="submit"
+          class="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded-md font-medium transition">
+          Submit Enrollment Request
+        </button>
+      </form>
+    </div>
+
+    <details class="mb-2 p-4 bg-neutral-800/60 rounded-lg border border-neutral-700">
+      <summary class="flex items-center gap-2 cursor-pointer select-none">
+        <span class="flex items-center justify-center h-5 w-5 rounded-full bg-neutral-600 text-xs font-semibold">3</span>
+        <h2 class="text-sm font-medium">After approval — install your certificate</h2>
+        <span class="ml-auto text-xs text-neutral-500">(do this once you get the email)</span>
+      </summary>
+
+      <div class="mt-4 space-y-4 text-xs text-neutral-400">
+        <p>
+          Once an admin approves your request, you'll receive a signed certificate by email. Save it next to your
+          <span class="font-mono text-neutral-300">client.key</span> as <span class="font-mono text-neutral-300">client.crt</span>,
+          then bundle the two into a single <span class="font-mono text-neutral-300">.p12</span> file your browser can import.
+        </p>
+
+        <div>
+          <p class="mb-1 text-neutral-300">a) Save the emailed certificate as <span class="font-mono">client.crt</span>, then verify it:</p>
+          <div class="relative group">
+            <pre id="cmd-verify" class="text-xs bg-black rounded-md p-3 pr-12 overflow-x-auto text-green-400">openssl x509 -in client.crt -noout -subject</pre>
+            <button type="button" data-copy="cmd-verify"
+              class="copy-btn absolute top-2 right-2 px-2 py-1 text-[11px] rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 transition">Copy</button>
+          </div>
+          <p class="mt-1 text-neutral-500">Should print your username as the subject CN.</p>
+        </div>
+
+        <div>
+          <p class="mb-1 text-neutral-300">b) Bundle cert + key into a <span class="font-mono">.p12</span> (you'll set an export password):</p>
+          <div class="relative group">
+            <pre id="cmd-p12" class="text-xs bg-black rounded-md p-3 pr-12 overflow-x-auto text-green-400">openssl pkcs12 -export -inkey client.key -in client.crt -out client.p12 -name "pi-ZTNA"</pre>
+            <button type="button" data-copy="cmd-p12"
+              class="copy-btn absolute top-2 right-2 px-2 py-1 text-[11px] rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 transition">Copy</button>
+          </div>
+          <p class="mt-1 text-neutral-500">If it errors with a key/cert mismatch, the cert wasn't issued from this key's request — re-check you used the right files.</p>
+        </div>
+
+        <div>
+          <p class="mb-1 text-neutral-300">c) Import <span class="font-mono">client.p12</span> into your browser:</p>
+          <div class="space-y-2 pl-1">
+            <div class="p-2 rounded bg-black/40 border border-neutral-700">
+              <p class="text-neutral-300 font-medium">Firefox</p>
+              <p class="text-neutral-400">Settings → Privacy &amp; Security → Certificates → <span class="text-neutral-200">View Certificates</span> → <span class="text-neutral-200">Your Certificates</span> → Import → choose <span class="font-mono">client.p12</span> → enter the export password.</p>
+            </div>
+            <div class="p-2 rounded bg-black/40 border border-neutral-700">
+              <p class="text-neutral-300 font-medium">Chrome / Edge</p>
+              <p class="text-neutral-400">Settings → Privacy and security → Security → <span class="text-neutral-200">Manage certificates</span> → Your certificates → Import → choose <span class="font-mono">client.p12</span>. Chrome uses your OS certificate store (Keychain on macOS, the system store on Windows, NSS on Linux).</p>
+            </div>
+          </div>
+        </div>
+
+        <p class="text-neutral-500">
+          After importing, open <a href="/login" class="text-blue-400 hover:underline">the login page</a> — your browser will prompt
+          you to present the certificate. Pick the pi-ZTNA one, then sign in with your username and password.
+        </p>
+      </div>
+    </details>
+
+    <p class="text-xs text-neutral-500 text-center mt-6">
+      Already enrolled? <a href="/login" class="text-blue-400 hover:underline">Log in</a>
+    </p>
+  </div>
+
+  <script>
+    function showToast(message){
+      const stack = document.getElementById("toast-stack");
+      const t = document.createElement("div");
+      t.className = "pointer-events-auto px-3 py-2 rounded-md text-xs font-medium shadow-lg border text-center bg-green-600/20 border-green-600 text-green-300 transition-opacity duration-300";
+      t.textContent = message;
+      stack.appendChild(t);
+      setTimeout(() => { t.style.opacity = "0"; setTimeout(() => t.remove(), 300); }, 1500);
+    }
+
+    // Copy-to-clipboard for every command block
+    document.querySelectorAll(".copy-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const target = document.getElementById(btn.getAttribute("data-copy"));
+        const text = target.innerText;
+        try {
+          await navigator.clipboard.writeText(text);
+          const original = btn.textContent;
+          btn.textContent = "Copied";
+          showToast("Copied to clipboard");
+          setTimeout(() => { btn.textContent = original; }, 1200);
+        } catch (e) {
+          // Fallback for non-secure contexts where clipboard API is blocked
+          const range = document.createRange();
+          range.selectNodeContents(target);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+          try { document.execCommand("copy"); showToast("Copied to clipboard"); }
+          catch (_) { showToast("Press Ctrl+C to copy"); }
+          sel.removeAllRanges();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

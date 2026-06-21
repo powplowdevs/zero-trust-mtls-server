@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>pi-ZTNA · Users</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-black min-h-screen text-gray-100">
+
+  <div id="toast-stack" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 items-center w-full max-w-md px-4 pointer-events-none"></div>
+
+  <nav class="border-b border-neutral-800 bg-neutral-950/80 backdrop-blur sticky top-0 z-40">
+    <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="h-2.5 w-2.5 rounded-full bg-blue-500"></span>
+        <span class="font-semibold tracking-tight">pi-ZTNA</span>
+      </div>
+      <div id="nav-links" class="flex items-center gap-1 text-sm"></div>
+    </div>
+  </nav>
+
+  <main class="max-w-6xl mx-auto px-6 py-10">
+    <header class="mb-8 flex items-end justify-between gap-4 flex-wrap">
+      <div>
+        <p class="text-xs uppercase tracking-widest text-blue-400 mb-1">Management</p>
+        <h1 class="text-2xl font-semibold">Users</h1>
+        <p class="text-sm text-neutral-400 mt-1">Select a user to view their account. Your own account isn't shown here.</p>
+      </div>
+      <button id="refresh" class="text-sm px-3 py-1.5 rounded-md border border-neutral-700 text-neutral-300 hover:bg-neutral-800 transition">
+        Refresh
+      </button>
+    </header>
+
+    <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+
+
+      <section>
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-medium text-neutral-300">Accounts</h2>
+          <span id="user-count" class="text-xs text-neutral-500"></span>
+        </div>
+        <div id="user-list" class="space-y-2"></div>
+        <p id="empty" class="text-sm text-neutral-500 mt-2 hidden">No other users.</p>
+      </section>
+
+      <section class="lg:sticky lg:top-20 self-start w-full">
+        <div id="detail-empty" class="p-8 bg-neutral-900 rounded-2xl border border-dashed border-neutral-800 text-center">
+          <p class="text-sm text-neutral-500">Select a user on the left to view their account.</p>
+        </div>
+
+        <div id="detail" class="hidden p-6 bg-neutral-900 rounded-2xl border border-neutral-800">
+          <div class="mb-5">
+            <h2 id="d-display" class="text-lg font-semibold text-gray-100">—</h2>
+            <p class="text-sm text-neutral-400">Username: <span id="d-username" class="text-neutral-200 font-mono">—</span></p>
+            <p class="text-xs text-neutral-500 mt-1">Created: <span id="d-created">—</span></p>
+          </div>
+
+          <div class="border-t border-neutral-800 pt-4">
+            <p class="text-sm font-medium text-neutral-300 mb-2">Permissions</p>
+            <div id="d-perms" class="flex flex-wrap gap-2"></div>
+          </div>
+
+          <div class="border-t border-neutral-800 mt-4 pt-4">
+            <div class="flex items-center justify-between mb-2">
+              <p class="text-sm font-medium text-neutral-300">Devices</p>
+              <span id="d-device-count" class="text-xs text-neutral-500"></span>
+            </div>
+            <ul id="d-devices" class="space-y-1"></ul>
+            <p id="d-no-devices" class="text-xs text-neutral-500 hidden">No devices linked.</p>
+          </div>
+
+          <!-- Danger zone -->
+          <div class="border-t border-red-900/40 mt-5 pt-5">
+            <p class="text-sm font-medium text-red-300 mb-1">Danger zone</p>
+            <p class="text-xs text-neutral-500 mb-3">Deleting a user permanently removes their account and all of their devices. This cannot be undone.</p>
+            <button id="delete-btn"
+              class="w-full py-2 bg-red-600/20 hover:bg-red-600/30 text-red-200 border border-red-600/50 rounded-md font-medium transition">
+              Delete user
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div id="modal-overlay" class="hidden fixed inset-0 z-[60] bg-black/70 flex items-center justify-center px-4">
+    <div class="w-full max-w-md p-6 bg-neutral-900 rounded-2xl border border-neutral-800 shadow-xl">
+      <h3 class="text-lg font-semibold text-gray-100 mb-2">Delete user?</h3>
+      <p class="text-sm text-neutral-400 mb-1">
+        You're about to permanently delete <span id="modal-username" class="text-red-300 font-medium">—</span>
+        and <span id="modal-device-count" class="text-neutral-200">their devices</span>.
+      </p>
+      <p class="text-xs text-neutral-500 mb-5">This action cannot be undone.</p>
+      <div class="flex gap-3">
+        <button id="modal-cancel"
+          class="flex-1 py-2 bg-neutral-800 hover:bg-neutral-700 rounded-md text-sm font-medium transition">
+          Cancel
+        </button>
+        <button id="modal-confirm"
+          class="flex-1 py-2 bg-red-600 hover:bg-red-700 rounded-md text-sm font-medium transition disabled:opacity-50">
+          Delete permanently
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function navItems(isAdmin) {
+      return [
+        { href: isAdmin ? "/admin/dashboard" : "/dashboard", label: "Dashboard", always: true },
+        { href: "/pending", label: "Pending",    perm: "manage_pending" },
+        { href: "/devices", label: "Devices",    perm: "manage_devices" },
+        { href: "/users",   label: "Users",      perm: "manage_users" },
+        { href: "/logs",    label: "Audit Logs", perm: "view_audit_logs" },
+      ];
+    }
+
+    function renderNav(perms) {
+      const isAdmin = perms.includes("system_admin");
+      const box = document.getElementById("nav-links");
+      const here = window.location.pathname;
+      const links = navItems(isAdmin)
+        .filter(i => i.always || isAdmin || perms.includes(i.perm))
+        .map(i => {
+          const active = here === i.href;
+          const cls = active
+            ? "px-3 py-1.5 rounded-md bg-blue-600/20 text-blue-300 border border-blue-600/40"
+            : "px-3 py-1.5 rounded-md text-neutral-300 hover:text-white hover:bg-neutral-800 transition";
+          return `<a href="${i.href}" class="${cls}">${i.label}</a>`;
+        }).join("");
+      box.innerHTML = links +
+        `<a href="/logout" class="ml-1 px-3 py-1.5 rounded-md text-neutral-400 hover:text-red-300 hover:bg-red-600/10 transition">Logout</a>`;
+    }
+
+    const PERM_LABELS = {
+      system_admin: "System Admin",
+      manage_devices: "Manage Devices",
+      manage_users: "Manage Users",
+      manage_pending: "Manage Pending",
+      view_audit_logs: "View Audit Logs",
+    };
+
+    let users = [];
+    let selectedUsername = null;
+    let currentUsername = null; // from /me — filtered out of the list
+
+    function escapeHtml(s){
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+    function fmtDate(s){
+      if(!s) return "—";
+      const d = new Date(s);
+      if(isNaN(d)) return s;
+      return d.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"});
+    }
+
+    function showToast(message, ok){
+      const stack = document.getElementById("toast-stack");
+      const t = document.createElement("div");
+      t.className = "pointer-events-auto cursor-pointer px-4 py-3 rounded-md text-sm font-medium shadow-lg border text-center w-full transition-opacity duration-300 " +
+        (ok ? "bg-green-600/20 border-green-600 text-green-300" : "bg-red-600/20 border-red-600 text-red-300");
+      t.textContent = message;
+      const remove = () => { t.style.opacity = "0"; setTimeout(()=>t.remove(),300); };
+      t.addEventListener("click", remove);
+      stack.appendChild(t);
+      if (ok) setTimeout(remove, 6000);
+    }
+
+    async function loadMe(){
+      try{
+        const res = await fetch("/me");
+        if(res.status===403||res.status===401){ window.location.href="/login"; return; }
+        if(res.ok){
+          const me = await res.json();
+          currentUsername = me.username;
+          renderNav(me.permissions||[]);
+        }
+      }catch(e){ /* nav stays empty; list load surfaces errors */ }
+    }
+
+    async function loadUsers(){
+      try{
+        const res = await fetch("/users/list");
+        if(res.status===403||res.status===401){ window.location.href="/login"; return; }
+        if(!res.ok) throw new Error("status "+res.status);
+        const all = (await res.json()) || [];
+        // filter out the current user — they can't manage/delete themselves here
+        users = all.filter(u => u.username !== currentUsername);
+      }catch(e){
+        document.getElementById("user-list").innerHTML =
+          `<p class="text-sm text-red-400">Couldn't load users: ${escapeHtml(e.message)}</p>`;
+        return;
+      }
+      renderList();
+    }
+
+    function renderList(){
+      const list = document.getElementById("user-list");
+      const empty = document.getElementById("empty");
+      const count = document.getElementById("user-count");
+      count.textContent = users.length + (users.length===1?" user":" users");
+
+      if(!users.length){
+        list.innerHTML = "";
+        empty.classList.remove("hidden");
+        clearDetail();
+        return;
+      }
+      empty.classList.add("hidden");
+
+      if(selectedUsername && !users.some(u => u.username===selectedUsername)) clearDetail();
+
+      list.innerHTML = users.map(u => {
+        const active = u.username === selectedUsername;
+        const cls = active ? "bg-blue-600/10 border-blue-600/50" : "bg-neutral-900 border-neutral-800 hover:border-neutral-700";
+        const isAdmin = (u.permissions||[]).includes("system_admin");
+        const tag = isAdmin
+          ? `<span class="text-[11px] px-1.5 py-0.5 rounded bg-blue-600/20 text-blue-300 border border-blue-600/40">Admin</span>`
+          : `<span class="text-[11px] text-neutral-500">${(u.permissions||[]).length} perms</span>`;
+        return `
+          <button data-username="${escapeHtml(u.username)}" class="w-full text-left p-3 rounded-xl border transition cursor-pointer ${cls}">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm font-medium text-gray-100">${escapeHtml(u.display_name || u.username)}</span>
+              ${tag}
+            </div>
+            <div class="text-xs text-neutral-400 mt-0.5 font-mono">${escapeHtml(u.username)}</div>
+          </button>`;
+      }).join("");
+
+      list.querySelectorAll("button[data-username]").forEach(btn => {
+        btn.addEventListener("click", () => selectUser(btn.getAttribute("data-username")));
+      });
+    }
+
+    function selectUser(username){
+      const u = users.find(x => x.username === username);
+      if(!u) return;
+      selectedUsername = username;
+      renderList();
+
+      document.getElementById("detail-empty").classList.add("hidden");
+      document.getElementById("detail").classList.remove("hidden");
+      document.getElementById("d-display").textContent = u.display_name || u.username;
+      document.getElementById("d-username").textContent = u.username;
+      document.getElementById("d-created").textContent = u.created_at ? fmtDate(u.created_at) : "—";
+
+      // permissions
+      const permBox = document.getElementById("d-perms");
+      const perms = u.permissions || [];
+      permBox.innerHTML = perms.length
+        ? perms.map(p => `<span class="px-2 py-1 rounded-md text-xs bg-blue-600/15 text-blue-300 border border-blue-600/30">${escapeHtml(PERM_LABELS[p] || p)}</span>`).join("")
+        : `<span class="text-xs text-neutral-500">No special permissions</span>`;
+
+      // devices
+      const devices = u.devices || [];
+      const devList = document.getElementById("d-devices");
+      const devCount = document.getElementById("d-device-count");
+      const devNone = document.getElementById("d-no-devices");
+      devCount.textContent = devices.length + (devices.length===1?" device":" devices");
+      if(!devices.length){
+        devList.innerHTML = "";
+        devNone.classList.remove("hidden");
+      } else {
+        devNone.classList.add("hidden");
+        devList.innerHTML = devices.map(d =>
+          `<li class="text-xs font-mono text-neutral-300 bg-black/30 rounded px-2 py-1 break-all">${escapeHtml(d)}</li>`
+        ).join("");
+      }
+
+      // wire delete to this user
+      document.getElementById("delete-btn").onclick = () => openModal(u);
+    }
+
+    function clearDetail(){
+      selectedUsername = null;
+      document.getElementById("detail").classList.add("hidden");
+      document.getElementById("detail-empty").classList.remove("hidden");
+    }
+
+    // ===== MODAL =====
+    let modalUser = null;
+
+    function openModal(u){
+      modalUser = u;
+      document.getElementById("modal-username").textContent = u.username;
+      const n = (u.devices || []).length;
+      document.getElementById("modal-device-count").textContent =
+        n === 0 ? "their account (no devices)" : `${n} device${n===1?"":"s"}`;
+      document.getElementById("modal-overlay").classList.remove("hidden");
+    }
+
+    function closeModal(){
+      modalUser = null;
+      document.getElementById("modal-overlay").classList.add("hidden");
+    }
+
+    async function confirmDelete(){
+      if(!modalUser) return;
+      const username = modalUser.username;
+      const btn = document.getElementById("modal-confirm");
+      btn.disabled = true;
+
+      const body = new URLSearchParams();
+      body.set("action", "delete");
+      body.set("username", username);
+
+      try{
+        const res = await fetch("/users", { method:"POST", body });
+        let data;
+        try{ data = await res.json(); }catch(e){ data = { message: "Non-JSON response (status "+res.status+")" }; }
+        showToast(data.message || (res.ok ? "User deleted" : "Error "+res.status), res.ok);
+        closeModal();
+        if(res.ok){ clearDetail(); await loadUsers(); }
+      }catch(e){
+        showToast("Network error: "+e.message, false);
+        closeModal();
+      }finally{
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById("modal-cancel").addEventListener("click", closeModal);
+    document.getElementById("modal-confirm").addEventListener("click", confirmDelete);
+    // click outside the dialog closes it
+    document.getElementById("modal-overlay").addEventListener("click", (e) => {
+      if (e.target === document.getElementById("modal-overlay")) closeModal();
+    });
+    // Esc closes it
+    document.addEventListener("keydown", (e) => { if(e.key === "Escape") closeModal(); });
+
+    document.getElementById("refresh").addEventListener("click", loadUsers);
+
+    // load /me first (need currentUsername to filter), then users
+    (async () => { await loadMe(); await loadUsers(); })();
+  </script>
+</body>
+</html>

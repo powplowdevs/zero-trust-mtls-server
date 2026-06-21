@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>pi-ZTNA · Audit Logs</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-black min-h-screen text-gray-100">
+
+  <div id="toast-stack" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 items-center w-full max-w-md px-4 pointer-events-none"></div>
+
+  <nav class="border-b border-neutral-800 bg-neutral-950/80 backdrop-blur sticky top-0 z-40">
+    <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="h-2.5 w-2.5 rounded-full bg-blue-500"></span>
+        <span class="font-semibold tracking-tight">pi-ZTNA</span>
+      </div>
+      <div id="nav-links" class="flex items-center gap-1 text-sm"></div>
+    </div>
+  </nav>
+
+  <main class="max-w-6xl mx-auto px-6 py-10">
+    <header class="mb-6 flex items-end justify-between gap-4 flex-wrap">
+      <div>
+        <p class="text-xs uppercase tracking-widest text-blue-400 mb-1">Audit</p>
+        <h1 class="text-2xl font-semibold">Logs</h1>
+        <p class="text-sm text-neutral-400 mt-1">Authentication and access events, newest first.</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="flex items-center gap-2 text-xs text-neutral-400 select-none">
+          <input type="checkbox" id="autorefresh" class="accent-blue-600" checked>
+          Auto-refresh
+        </label>
+        <button id="refresh" class="text-sm px-3 py-1.5 rounded-md border border-neutral-700 text-neutral-300 hover:bg-neutral-800 transition">
+          Refresh
+        </button>
+      </div>
+    </header>
+
+    <div id="new-pill-wrap" class="mb-4 hidden">
+      <button id="new-pill" class="w-full py-2 rounded-md bg-blue-600/20 border border-blue-600/50 text-blue-200 text-sm font-medium hover:bg-blue-600/30 transition">
+        <span id="new-pill-count">0</span> new events — click to load
+      </button>
+    </div>
+
+    <div class="mb-4 p-4 bg-neutral-900 rounded-2xl border border-neutral-800">
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div>
+          <label class="block text-xs text-neutral-500 mb-1">Action</label>
+          <select id="f-action" class="w-full px-3 py-2 text-sm bg-neutral-800 text-gray-100 rounded-md border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">All actions</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-neutral-500 mb-1">Outcome</label>
+          <select id="f-outcome" class="w-full px-3 py-2 text-sm bg-neutral-800 text-gray-100 rounded-md border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">All outcomes</option>
+          </select>
+        </div>
+        <div class="lg:col-span-2">
+          <label class="block text-xs text-neutral-500 mb-1">Search (user, fingerprint, device, endpoint)</label>
+          <input id="f-search" type="text" placeholder="type to filter…"
+            class="w-full px-3 py-2 text-sm bg-neutral-800 text-gray-100 rounded-md border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+      </div>
+
+      <div class="mt-3 flex items-center gap-2 flex-wrap">
+        <span class="text-xs text-neutral-500 mr-1">Severity</span>
+        <button data-sev="error" class="sev-toggle px-3 py-1 rounded-full text-xs font-medium border transition"></button>
+        <button data-sev="warning" class="sev-toggle px-3 py-1 rounded-full text-xs font-medium border transition"></button>
+        <button data-sev="success" class="sev-toggle px-3 py-1 rounded-full text-xs font-medium border transition"></button>
+        <span class="mx-1 text-neutral-700">·</span>
+        <button id="sev-errors-only" class="text-xs text-neutral-400 hover:text-red-300 transition">Errors only</button>
+        <button id="sev-all" class="text-xs text-neutral-400 hover:text-white transition">All</button>
+      </div>
+
+      <div class="flex items-center justify-between mt-3">
+        <span id="filter-summary" class="text-xs text-neutral-500"></span>
+        <button id="clear-filters" class="text-xs text-neutral-400 hover:text-white transition">Clear filters</button>
+      </div>
+    </div>
+
+    <div class="bg-neutral-900 rounded-2xl border border-neutral-800 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-neutral-950/50">
+            <tr class="text-left text-neutral-500 border-b border-neutral-800">
+              <th class="py-2.5 px-4 font-normal w-10"></th>
+              <th class="py-2.5 px-4 font-normal">Time</th>
+              <th class="py-2.5 px-4 font-normal">Action</th>
+              <th class="py-2.5 px-4 font-normal">Outcome</th>
+              <th class="py-2.5 px-4 font-normal">User</th>
+              <th class="py-2.5 px-4 font-normal">Endpoint</th>
+            </tr>
+          </thead>
+          <tbody id="log-rows" class="divide-y divide-neutral-800/60"></tbody>
+        </table>
+      </div>
+      <div id="empty" class="hidden py-10 text-center text-sm text-neutral-500">No matching events.</div>
+      <div id="loading" class="py-10 text-center text-sm text-neutral-500">Loading logs…</div>
+    </div>
+
+    <div class="mt-4 flex items-center justify-between">
+      <span id="count-info" class="text-xs text-neutral-500"></span>
+      <button id="load-more" class="hidden text-sm px-4 py-2 rounded-md border border-neutral-700 text-neutral-300 hover:bg-neutral-800 transition">
+        Load more
+      </button>
+    </div>
+  </main>
+
+  <script>
+    function navItems(isAdmin) {
+      return [
+        { href: isAdmin ? "/admin/dashboard" : "/dashboard", label: "Dashboard", always: true },
+        { href: "/pending", label: "Pending",    perm: "manage_pending" },
+        { href: "/devices", label: "Devices",    perm: "manage_devices" },
+        { href: "/users",   label: "Users",      perm: "manage_users" },
+        { href: "/logs",    label: "Audit Logs", perm: "view_audit_logs" },
+      ];
+    }
+
+    function renderNav(perms) {
+      const isAdmin = perms.includes("system_admin");
+      const box = document.getElementById("nav-links");
+      const here = window.location.pathname;
+      const links = navItems(isAdmin)
+        .filter(i => i.always || isAdmin || perms.includes(i.perm))
+        .map(i => {
+          const active = here === i.href;
+          const cls = active
+            ? "px-3 py-1.5 rounded-md bg-blue-600/20 text-blue-300 border border-blue-600/40"
+            : "px-3 py-1.5 rounded-md text-neutral-300 hover:text-white hover:bg-neutral-800 transition";
+          return `<a href="${i.href}" class="${cls}">${i.label}</a>`;
+        }).join("");
+      box.innerHTML = links +
+        `<a href="/logout" class="ml-1 px-3 py-1.5 rounded-md text-neutral-400 hover:text-red-300 hover:bg-red-600/10 transition">Logout</a>`;
+    }
+
+    const OUTCOME_STYLE = {
+      SUCCESS:             "bg-green-600/15 text-green-300 border-green-600/30",
+      REJECTED:            "bg-red-600/15 text-red-300 border-red-600/30",
+      ERROR:               "bg-red-600/15 text-red-300 border-red-600/30",
+      NO_PERMISSION:       "bg-red-600/15 text-red-300 border-red-600/30",
+      CERT_MISMATCH:       "bg-red-600/15 text-red-300 border-red-600/30",
+      CERT_USER_MISMATCH:  "bg-red-600/15 text-red-300 border-red-600/30",
+      INVALID_CREDENTIALS: "bg-red-600/15 text-red-300 border-red-600/30",
+      NO_CERT:             "bg-amber-600/15 text-amber-300 border-amber-600/30",
+      NO_COOKIE:           "bg-amber-600/15 text-amber-300 border-amber-600/30",
+      NO_SESSION:          "bg-amber-600/15 text-amber-300 border-amber-600/30",
+      RATE_LIMITED:        "bg-amber-600/15 text-amber-300 border-amber-600/30",
+    };
+    function outcomeClass(o){ return OUTCOME_STYLE[o] || "bg-neutral-700/40 text-neutral-300 border-neutral-600/40"; }
+
+    const SEVERITY = {
+      error:   ["REJECTED","ERROR","NO_PERMISSION","CERT_MISMATCH","CERT_USER_MISMATCH","INVALID_CREDENTIALS"],
+      warning: ["NO_CERT","NO_COOKIE","NO_SESSION","RATE_LIMITED"],
+      success: ["SUCCESS"],
+    };
+    function severityOf(o){
+      if (SEVERITY.error.includes(o)) return "error";
+      if (SEVERITY.warning.includes(o)) return "warning";
+      if (SEVERITY.success.includes(o)) return "success";
+      return "other";
+    }
+    let activeSev = { error: true, warning: true, success: true };
+
+    const SEV_PILL = {
+      error:   { label: "Error",   on: "bg-red-600/20 text-red-200 border-red-600/50",     off: "bg-neutral-900 text-neutral-500 border-neutral-700" },
+      warning: { label: "Warning", on: "bg-amber-600/20 text-amber-200 border-amber-600/50", off: "bg-neutral-900 text-neutral-500 border-neutral-700" },
+      success: { label: "Success", on: "bg-green-600/20 text-green-200 border-green-600/50", off: "bg-neutral-900 text-neutral-500 border-neutral-700" },
+    };
+    function renderSevToggles(){
+      document.querySelectorAll(".sev-toggle").forEach(btn => {
+        const sev = btn.getAttribute("data-sev");
+        const cfg = SEV_PILL[sev];
+        const on = activeSev[sev];
+        btn.className = "sev-toggle px-3 py-1 rounded-full text-xs font-medium border transition " + (on ? cfg.on : cfg.off);
+        btn.textContent = (on ? "✓ " : "") + cfg.label;
+        btn.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+    }
+
+    function rowAccent(o){
+      const sev = severityOf(o);
+      if (sev === "success") return "border-l-2 border-l-green-600/40";
+      if (sev === "error")   return "border-l-2 border-l-red-600/50";
+      if (sev === "warning") return "border-l-2 border-l-amber-600/50";
+      return "border-l-2 border-l-transparent";
+    }
+
+    let logs = [];
+    let total = 0;
+    let loadedCount = 0;
+    let newestTs = null;
+    let expanded = new Set();
+    let idxCounter = 0;
+
+    function escapeHtml(s){
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+    function fmtTime(unix){
+      if(!unix) return "—";
+      const d = new Date(unix * 1000);
+      if(isNaN(d)) return String(unix);
+      return d.toLocaleString(undefined,{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    }
+
+    function showToast(message, ok){
+      const stack = document.getElementById("toast-stack");
+      const t = document.createElement("div");
+      t.className = "pointer-events-auto cursor-pointer px-4 py-3 rounded-md text-sm font-medium shadow-lg border text-center w-full transition-opacity duration-300 " +
+        (ok ? "bg-green-600/20 border-green-600 text-green-300" : "bg-red-600/20 border-red-600 text-red-300");
+      t.textContent = message;
+      const remove = () => { t.style.opacity = "0"; setTimeout(()=>t.remove(),300); };
+      t.addEventListener("click", remove);
+      stack.appendChild(t);
+      if (ok) setTimeout(remove, 5000);
+    }
+
+    async function loadMe(){
+      try{
+        const res = await fetch("/me");
+        if(res.status===403||res.status===401){ window.location.href="/login"; return; }
+        if(res.ok){ const me = await res.json(); renderNav(me.permissions||[]); }
+      }catch(e){ /* nav stays empty */ }
+    }
+
+    async function fetchLogs(offset){
+      const res = await fetch("/logs/list?offset=" + offset);
+      if(res.status===403||res.status===401){ window.location.href="/login"; throw new Error("auth"); }
+      if(!res.ok) throw new Error("status " + res.status);
+      const data = await res.json();
+      return { lines: (data.lines || []), total: data.total || 0 };
+    }
+
+    function indexLogs(){
+      logs.forEach((l) => { if(l._id === undefined) l._id = "log_" + (idxCounter++); });
+    }
+
+    async function loadInitial(){
+      document.getElementById("loading").classList.remove("hidden");
+      try{
+        const { lines, total: t } = await fetchLogs(0);
+        logs = lines;
+        total = t;
+        loadedCount = lines.length;
+        newestTs = lines.length ? lines[0].timestamp : null;
+        idxCounter = 0;
+        expanded.clear();
+      }catch(e){
+        if(e.message !== "auth"){
+          document.getElementById("loading").textContent = "Couldn't load logs: " + e.message;
+        }
+        return;
+      }
+      document.getElementById("loading").classList.add("hidden");
+      buildFilterOptions();
+      hideNewPill();
+      render();
+    }
+
+    async function loadMore(){
+      const btn = document.getElementById("load-more");
+      btn.disabled = true; btn.textContent = "Loading…";
+      try{
+        const { lines, total: t } = await fetchLogs(loadedCount);
+        logs = logs.concat(lines);
+        total = t;
+        loadedCount += lines.length;
+      }catch(e){
+        showToast("Couldn't load more: " + e.message, false);
+      }finally{
+        btn.disabled = false; btn.textContent = "Load more";
+      }
+      render();
+    }
+
+    async function checkNew(){
+      if(!document.getElementById("autorefresh").checked) return;
+      try{
+        const { lines, total: t } = await fetchLogs(0);
+        if(!lines.length){ return; }
+        let newCount = 0;
+        for(const l of lines){
+          if(newestTs === null || l.timestamp > newestTs) newCount++;
+          else break;
+        }
+        const grew = t - total;
+        const count = Math.max(newCount, grew > 0 ? grew : 0);
+        if(count > 0){ showNewPill(count); }
+      }catch(e){ /* silent */ }
+    }
+
+    function showNewPill(count){
+      document.getElementById("new-pill-count").textContent = count;
+      document.getElementById("new-pill-wrap").classList.remove("hidden");
+    }
+    function hideNewPill(){
+      document.getElementById("new-pill-wrap").classList.add("hidden");
+    }
+
+    function buildFilterOptions(){
+      const actions = [...new Set(logs.map(l => l.action).filter(Boolean))].sort();
+      const outcomes = [...new Set(logs.map(l => l.outcome).filter(Boolean))].sort();
+      const aSel = document.getElementById("f-action");
+      const oSel = document.getElementById("f-outcome");
+      const aPrev = aSel.value, oPrev = oSel.value;
+      aSel.innerHTML = `<option value="">All actions</option>` + actions.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join("");
+      oSel.innerHTML = `<option value="">All outcomes</option>` + outcomes.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join("");
+      aSel.value = aPrev; oSel.value = oPrev;
+    }
+
+    function applyFilters(list){
+      const action = document.getElementById("f-action").value;
+      const outcome = document.getElementById("f-outcome").value;
+      const q = document.getElementById("f-search").value.trim().toLowerCase();
+      return list.filter(l => {
+        const sev = severityOf(l.outcome);
+        if (sev !== "other" && !activeSev[sev]) return false;
+        if(action && l.action !== action) return false;
+        if(outcome && l.outcome !== outcome) return false;
+        if(q){
+          const hay = [l.username, l.fingerprint, l.deviceID, l.endpoint, JSON.stringify(l.metadata||{})]
+            .join(" ").toLowerCase();
+          if(!hay.includes(q)) return false;
+        }
+        return true;
+      });
+    }
+
+    function render(){
+      indexLogs();
+
+      const rows = document.getElementById("log-rows");
+      const empty = document.getElementById("empty");
+      const filtered = applyFilters(logs);
+
+      document.getElementById("filter-summary").textContent =
+        `Showing ${filtered.length} of ${logs.length} loaded`;
+      document.getElementById("count-info").textContent =
+        `${loadedCount} loaded · ${total} total in file`;
+
+      const lm = document.getElementById("load-more");
+      if(loadedCount < total) lm.classList.remove("hidden");
+      else lm.classList.add("hidden");
+
+      if(!filtered.length){
+        rows.innerHTML = "";
+        empty.classList.remove("hidden");
+        return;
+      }
+      empty.classList.add("hidden");
+
+      rows.innerHTML = filtered.map((l) => {
+        const isOpen = expanded.has(l._id);
+        const meta = l.metadata || {};
+        const metaRows = Object.keys(meta).length
+          ? Object.entries(meta).map(([k,v]) =>
+              `<div class="flex gap-3 py-0.5"><span class="text-neutral-500 min-w-[120px]">${escapeHtml(k)}</span><span class="text-neutral-300 break-all">${escapeHtml(String(v))}</span></div>`
+            ).join("")
+          : `<span class="text-neutral-600">No metadata</span>`;
+
+        const caretCls = isOpen ? "w-3 h-3 text-neutral-300 rotate-90 transition-transform" : "w-3 h-3 text-neutral-500 transition-transform";
+        const caret = `<svg class="${caretCls}" viewBox="0 0 12 12" fill="currentColor"><path d="M4 2l4 4-4 4z"/></svg>`;
+
+        return `
+          <tr data-id="${l._id}" class="cursor-pointer hover:bg-neutral-800/40 transition ${rowAccent(l.outcome)}">
+            <td class="py-2.5 px-4">${caret}</td>
+            <td class="py-2.5 px-4 text-neutral-400 whitespace-nowrap">${escapeHtml(fmtTime(l.timestamp))}</td>
+            <td class="py-2.5 px-4 text-neutral-200 font-mono text-xs">${escapeHtml(l.action || "—")}</td>
+            <td class="py-2.5 px-4">
+              <span class="px-2 py-0.5 rounded text-[11px] font-medium border ${outcomeClass(l.outcome)}">${escapeHtml(l.outcome || "—")}</span>
+            </td>
+            <td class="py-2.5 px-4 text-neutral-300">${escapeHtml(l.username || "—")}</td>
+            <td class="py-2.5 px-4 text-neutral-400 font-mono text-xs">${escapeHtml(l.endpoint || "—")}</td>
+          </tr>
+          <tr data-detail="${l._id}" class="${isOpen ? "" : "hidden"}">
+            <td colspan="6" class="px-4 pb-4 pt-0 bg-neutral-950/40">
+              <div class="text-xs rounded-lg bg-black/40 border border-neutral-800 p-3 space-y-0.5">
+                <div class="flex gap-3 py-0.5"><span class="text-neutral-500 min-w-[120px]">fingerprint</span><span class="text-neutral-300 break-all font-mono">${escapeHtml(l.fingerprint || "—")}</span></div>
+                <div class="flex gap-3 py-0.5"><span class="text-neutral-500 min-w-[120px]">deviceID</span><span class="text-neutral-300 break-all font-mono">${escapeHtml(l.deviceID || "—")}</span></div>
+                ${metaRows}
+              </div>
+            </td>
+          </tr>`;
+      }).join("");
+
+      rows.querySelectorAll("tr[data-id]").forEach(tr => {
+        tr.addEventListener("click", () => {
+          const id = tr.getAttribute("data-id");
+          if(expanded.has(id)) expanded.delete(id); else expanded.add(id);
+          render();
+        });
+      });
+    }
+
+    document.getElementById("f-action").addEventListener("change", render);
+    document.getElementById("f-outcome").addEventListener("change", render);
+    document.getElementById("f-search").addEventListener("input", render);
+    document.getElementById("clear-filters").addEventListener("click", () => {
+      document.getElementById("f-action").value = "";
+      document.getElementById("f-outcome").value = "";
+      document.getElementById("f-search").value = "";
+      activeSev = { error: true, warning: true, success: true };
+      renderSevToggles();
+      render();
+    });
+
+    // severity toggle pills
+    document.querySelectorAll(".sev-toggle").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const sev = btn.getAttribute("data-sev");
+        activeSev[sev] = !activeSev[sev];
+        renderSevToggles();
+        render();
+      });
+    });
+    // shortcuts
+    document.getElementById("sev-errors-only").addEventListener("click", () => {
+      activeSev = { error: true, warning: false, success: false };
+      renderSevToggles();
+      render();
+    });
+    document.getElementById("sev-all").addEventListener("click", () => {
+      activeSev = { error: true, warning: true, success: true };
+      renderSevToggles();
+      render();
+    });
+
+    document.getElementById("load-more").addEventListener("click", loadMore);
+    document.getElementById("refresh").addEventListener("click", loadInitial);
+    document.getElementById("new-pill").addEventListener("click", loadInitial);
+
+    setInterval(checkNew, 8000);
+
+    renderSevToggles();
+    (async () => { await loadMe(); await loadInitial(); })();
+  </script>
+</body>
+</html>
